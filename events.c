@@ -51,19 +51,29 @@ void
 event_loop(void)
 {
 	struct pollfd pfd[2];
-
+        struct Dimensions dims = get_dimensions(dpy,screen);
 	memset(&pfd, 0, sizeof(pfd));
 	pfd[0].fd = ConnectionNumber(dpy);
 	pfd[0].events = POLLIN;
 	pfd[1].fd = exitmsg[0];
 	pfd[1].events = POLLIN;
-
+        
 	for (;;) {
 		if (!XPending(dpy)) {
-			poll(pfd, 2, INFTIM);
+			int retval = poll(pfd, 2, 1000);
 			if (pfd[1].revents)
 				/* exitmsg */
 				break;
+                        
+                        struct Dimensions temp = get_dimensions(dpy,screen);
+                        if(dims.width!=temp.width || dims.height!=temp.height)
+                        {
+                                dims = temp;
+                                if(focused && focused->state & STATE_ZOOMED)
+                                        zoom_client(focused);
+                                else if(focused && focused->state & STATE_FULLSCREEN)
+                                        fullscreen_client(focused);
+                        }
 
 			if (!XPending(dpy))
 				continue;

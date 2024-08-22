@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xinerama.h>
 #include "progman.h"
 
 void
@@ -108,6 +109,12 @@ parse_action(char *prefix, char *action)
 		iaction = ACTION_QUIT;
 	else if (strcmp(taction, "drag") == 0)
 		iaction = ACTION_DRAG;
+        else if (strcmp(taction, "fullscreen") == 0)
+                iaction = ACTION_FULL_SCREEN;
+        else if (strcmp(taction,"iconify") == 0)
+                iaction = ACTION_ICONIFY;
+        else if (strcmp(taction,"move") == 0)
+                iaction = ACTION_MOVE;
 	else if (taction[0] == '\n' || taction[0] == '\0')
 		iaction = ACTION_NONE;
 	else
@@ -116,6 +123,7 @@ parse_action(char *prefix, char *action)
 	/* parse numeric or string args */
 	switch (iaction) {
 	case ACTION_DESK:
+        case ACTION_MOVE:
 		if (targ == NULL) {
 			warnx("%s: missing argument for \"%s\"",
 			    prefix, taction);
@@ -123,9 +131,11 @@ parse_action(char *prefix, char *action)
 		}
 
 		if (strcmp(targ, "next") == 0)
-			iaction = ACTION_DESK_NEXT;
+                        iaction++;
 		else if (strcmp(targ, "previous") == 0)
-			iaction = ACTION_DESK_PREVIOUS;
+			iaction+=2;
+                else if (strcmp(targ, "all") == 0)
+                        iarg = DESK_ALL;
 		else {
 			errno = 0;
 			iarg = strtol(targ, NULL, 10);
@@ -208,6 +218,16 @@ take_action(action_t *action)
 		if (cur_desk > 0)
 			goto_desk(cur_desk - 1);
 		break;
+        case ACTION_MOVE_NEXT:
+        case ACTION_MOVE_PREVIOUS:
+                action->iarg = cur_desk + (action->action==ACTION_MOVE_NEXT ? 1 : -1);
+	case ACTION_MOVE:
+                if(focused)
+                {
+                        focused->desk = action->iarg;
+                        goto_desk(cur_desk);
+                }
+		break;
 	case ACTION_CLOSE:
 		if (focused)
 			send_wm_delete(focused);
@@ -228,4 +248,51 @@ take_action(action_t *action)
 	default:
 		warnx("unhandled action %d\n", action->action);
 	}
+}
+
+struct Dimensions get_dimensions(Display* dpy, int screen)
+{
+        int m_winWidth = 0;
+        int m_winHeight = 0;
+        if (XineramaIsActive (dpy))
+        {
+                int m = 0;
+                int pixels = 0;
+                
+                XineramaScreenInfo *xs = XineramaQueryScreens (dpy, &m);
+                
+                if (0 != xs && m > 0)
+                {
+                        for (int i = 0; i < m; i++)
+                        {
+                                //printf ("%dx%d, [%d, %d] %d\n", xs[i].width, xs[i].height, xs[i].x_org, xs[i].y_org, xs[i].screen_number);
+                                if (xs[i].width * xs[i].height > pixels)
+                                {
+                                        pixels = xs[i].width * xs[i].height;
+                                        m_winWidth = xs[i].width;
+                                        m_winHeight = xs[i].height;
+                                }
+                        }
+                        
+                        XFree (xs);
+                }
+        }
+        else
+        {
+                m_winWidth = DisplayWidth(dpy,screen);
+                m_winHeight = DisplayHeight(dpy,screen);
+        }
+
+        struct Dimensions to_return = {m_winWidth,m_winHeight};
+        return to_return;
+}
+
+int get_x(Display* dpy, int screen)
+{
+        return get_dimensions(dpy,screen).width;
+}
+
+int get_y(Display* dpy, int screen)
+{
+        return get_dimensions(dpy,screen).height;
 }

@@ -140,6 +140,11 @@ enum {
 	ACTION_RESTART,
 	ACTION_QUIT,
 	ACTION_DRAG,
+        ACTION_ICONIFY,
+        ACTION_FULL_SCREEN,
+        ACTION_MOVE,
+        ACTION_MOVE_NEXT,
+        ACTION_MOVE_PREVIOUS,
 };
 
 /* client_t state */
@@ -220,7 +225,7 @@ struct client {
 	XSizeHints size_hints;
 	Colormap cmap;
 	int ignore_unmap;
-	unsigned long desk;
+	unsigned int desk;
 	Bool placed;
 	Bool shaped;
 	int state;
@@ -441,5 +446,14 @@ extern int send_xmessage(Window, Window, Atom, unsigned long, unsigned long);
 extern action_t *bind_key(int, char *, char *);
 extern void take_action(action_t *);
 extern action_t *parse_action(char *, char *);
+struct Dimensions
+{
+        int width;
+        int height;
+};
+
+extern struct Dimensions get_dimensions(Display* dpy, int screen);
+extern int get_x(Display* dpy, int screen);
+extern int get_y(Display* dpy, int screen);
 
 #endif	/* PROGMAN_H */

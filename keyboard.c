@@ -23,6 +23,7 @@
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <strings.h>
 #include "progman.h"
@@ -227,6 +228,18 @@ handle_key_event(XKeyEvent *e)
 		cycle_key = key_actions[i].key;
 		take_action(&key_actions[i]);
 		break;
+        case ACTION_ICONIFY:
+                if(focused)
+                        iconify_client(focused);
+                break;
+        case ACTION_FULL_SCREEN:
+                static bool is_fullscreen;
+                if(focused)
+                        if(is_fullscreen = !is_fullscreen)
+                                fullscreen_client(focused);
+                        else
+                                unfullscreen_client(focused);
+                break;
 	default:
 		take_action(&key_actions[i]);
 	}

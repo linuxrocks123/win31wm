@@ -451,8 +451,8 @@ place_icon(client_t *c)
 
 	collect_struts(c, &s);
 
-	s.right = DisplayWidth(dpy, screen) - s.right;
-	s.bottom = DisplayHeight(dpy, screen) - s.bottom;
+	s.right = get_x(dpy, screen) - s.right;
+	s.bottom = get_y(dpy, screen) - s.bottom;
 
 	isize = icon_size * 2.25;
 
@@ -537,15 +537,12 @@ do_shade(client_t *c)
 void
 fullscreen_client(client_t *c)
 {
-	int screen_x = DisplayWidth(dpy, screen);
-	int screen_y = DisplayHeight(dpy, screen);
+	int screen_x = get_x(dpy, screen);
+	int screen_y = get_y(dpy, screen);
 
 #ifdef DEBUG
 	dump_name(c, __func__, NULL, c->name);
 #endif
-
-	if (c->state & (STATE_FULLSCREEN | STATE_DOCK))
-		return;
 
 	if (c->state & STATE_SHADED)
 		unshade_client(c);
@@ -592,7 +589,7 @@ zoom_client(client_t *c)
 {
 	strut_t s = { 0 };
 
-	if (c->state & STATE_DOCK)
+	if (c->state & (STATE_DOCK | STATE_FULLSCREEN))
 		return;
 
 	if (c->state & STATE_SHADED)
@@ -606,8 +603,8 @@ zoom_client(client_t *c)
 
 	c->geom.x = s.left;
 	c->geom.y = s.top + c->titlebar_geom.h;
-	c->geom.w = DisplayWidth(dpy, screen) - s.left - s.right;
-	c->geom.h = DisplayHeight(dpy, screen) - s.top - s.bottom - c->geom.y;
+	c->geom.w = get_x(dpy, screen) - s.left - s.right;
+	c->geom.h = get_y(dpy, screen) - s.top - s.bottom - c->geom.y;
 
 	append_atoms(c->win, net_wm_state, XA_ATOM, &net_wm_state_mv, 1);
 	append_atoms(c->win, net_wm_state, XA_ATOM, &net_wm_state_mh, 1);
@@ -776,8 +773,8 @@ void
 recalc_map(client_t *c, geom_t orig, int x0, int y0, int x1, int y1,
     strut_t *s, void *arg)
 {
-	int screen_x = DisplayWidth(dpy, screen);
-	int screen_y = DisplayHeight(dpy, screen);
+	int screen_x = get_x(dpy, screen);
+	int screen_y = get_y(dpy, screen);
 	int wmax = screen_x - s->left - s->right;
 	int hmax = screen_y - s->top - s->bottom;
 
@@ -794,8 +791,8 @@ recalc_move(client_t *c, geom_t orig, int x0, int y0, int x1, int y1,
 {
 	int newx = orig.x + x1 - x0;
 	int newy = orig.y + y1 - y0;
-	int sw = DisplayWidth(dpy, screen);
-	int sh = DisplayHeight(dpy, screen);
+	int sw = get_x(dpy, screen);
+	int sh = get_y(dpy, screen);
 	geom_t tg;
 
 	if (c->state & STATE_ICONIFIED) {
@@ -989,14 +986,14 @@ constrain_frame(client_t *c)
 		c->geom.y += delta;
 	}
 
-	h = DisplayHeight(dpy, screen) - s.top - s.bottom;
+	h = get_y(dpy, screen) - s.top - s.bottom;
 	if (c->frame_geom.y + c->frame_geom.h > h) {
 		delta = c->frame_geom.y + c->frame_geom.h - h;
 		c->frame_geom.h -= delta;
 		c->geom.h -= delta;
 	}
 
-	w = DisplayWidth(dpy, screen) - s.left - s.right;
+	w = get_x(dpy, screen) - s.left - s.right;
 	if (c->frame_geom.x + c->frame_geom.w > w) {
 		delta = c->frame_geom.x + c->frame_geom.w - w;
 		c->frame_geom.w -= delta;

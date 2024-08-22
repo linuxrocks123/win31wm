@@ -335,8 +335,8 @@ init_geom(client_t *c, strut_t *s)
 	geom_t size_flags = { 0 };
 #endif
 	unsigned long win_type, read, left;
-	int screen_x = DisplayWidth(dpy, screen);
-	int screen_y = DisplayHeight(dpy, screen);
+	int screen_x = get_x(dpy, screen);
+	int screen_y = get_y(dpy, screen);
 	int wmax = screen_x - s->left - s->right;
 	int hmax = screen_y - s->top - s->bottom;
 	int mouse_x, mouse_y;

@@ -24,10 +24,10 @@
 PREFIX?=	/usr/local
 X11BASE?=	/usr/X11R6
 
-PKGLIBS=	x11 xft xext xpm
+PKGLIBS=	x11 xft xext xpm xinerama
 
 CC?=		cc
-CFLAGS+=	-O2 -Wall -Wunused \
+CFLAGS+=	-O3 -Wall -Wunused \
 		-Wunused -Wmissing-prototypes -Wstrict-prototypes \
 		-Wpointer-sign \
 		`pkg-config --cflags ${PKGLIBS}`
