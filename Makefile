@@ -27,11 +27,11 @@ X11BASE?=	/usr/X11R6
 PKGLIBS=	x11 xft xext xpm xinerama
 
 CC?=		cc
-CFLAGS+=	-O3 -Wall -Wunused \
+CFLAGS+=	-O3 -flto -Wall -Wunused \
 		-Wunused -Wmissing-prototypes -Wstrict-prototypes \
 		-Wpointer-sign \
 		`pkg-config --cflags ${PKGLIBS}`
-LDFLAGS+=	`pkg-config --libs ${PKGLIBS}`
+LDFLAGS+=	`pkg-config --libs ${PKGLIBS}` -O3 -flto
 
 # use gdk-pixbuf to rescale icons; optional
 PKGLIBS+=	gdk-pixbuf-xlib-2.0

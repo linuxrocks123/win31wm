@@ -456,8 +456,8 @@ place_icon(client_t *c)
 
 	isize = icon_size * 2.25;
 
-	for (y = s.bottom - isize; y >= s.top; y -= isize) {
-		for (x = s.left + icon_size; x < s.right - isize; x += isize) {
+        for (x = s.right - icon_size; x >= s.left; x -= isize) {
+                for (y = s.bottom - isize; y >= s.top; y -= isize) {
 			int overlap = 0;
 
 			for (p = focused; p; p = p->next) {
