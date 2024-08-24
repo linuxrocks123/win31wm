@@ -26,11 +26,14 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <xcb/xproto.h>
 #include "progman.h"
 
 action_t *key_actions = NULL;
 int nkey_actions = 0;
 static int cycle_key = 0;
+
+const static int IGNORED_MODIFIERS = XCB_MOD_MASK_LOCK | XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_2;
 
 action_t *
 bind_key(int type, char *key, char *action)
@@ -157,8 +160,15 @@ bind_key(int type, char *key, char *action)
 		if (overwrite && iaction == ACTION_NONE)
 			XUngrabKey(dpy, XKeysymToKeycode(dpy, k), mod, root);
 		else if (!overwrite)
-			XGrabKey(dpy, XKeysymToKeycode(dpy, k), mod, root,
+                {
+                  int ignored_mod_mask = 0;
+                  do
+                  {
+			XGrabKey(dpy, XKeysymToKeycode(dpy, k), mod | ignored_mod_mask, root,
 			    False, GrabModeAsync, GrabModeAsync);
+                        ignored_mod_mask = (ignored_mod_mask - IGNORED_MODIFIERS) & IGNORED_MODIFIERS;
+                  } while(ignored_mod_mask);
+                }
 	}
 
 	return &key_actions[aidx];
@@ -204,7 +214,7 @@ handle_key_event(XKeyEvent *e)
 	for (i = 0; i < nkey_actions; i++) {
 		if (key_actions[i].type == BINDING_TYPE_KEYBOARD &&
 		    key_actions[i].key == kc &&
-		    key_actions[i].mod == e->state) {
+		    (key_actions[i].mod & ~IGNORED_MODIFIERS) == (e->state & ~IGNORED_MODIFIERS)) {
 			action = &key_actions[i];
 			break;
 		}
@@ -230,7 +240,10 @@ handle_key_event(XKeyEvent *e)
 		break;
         case ACTION_ICONIFY:
                 if(focused)
-                        iconify_client(focused);
+                        if(focused->state==STATE_ICONIFIED)
+                                uniconify_client(focused);
+                        else
+                                iconify_client(focused);
                 break;
         case ACTION_FULL_SCREEN:
                 static bool is_fullscreen;
