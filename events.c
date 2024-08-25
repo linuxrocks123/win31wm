@@ -188,7 +188,6 @@ handle_button_press(XButtonEvent *e)
 	} else if (e->window == root) {
 		for (i = 0; i < nkey_actions; i++) {
 			if (key_actions[i].type == BINDING_TYPE_DESKTOP &&
-			    key_actions[i].mod == e->state &&
 			    key_actions[i].button == e->button) {
 				take_action(&key_actions[i]);
 				break;

@@ -61,7 +61,7 @@
 
 #define DEF_NDESKS 5
 
-#define DOUBLE_CLICK_MSEC 250
+#define DOUBLE_CLICK_MSEC 500
 
 #define BUF_SIZE 2048
 
