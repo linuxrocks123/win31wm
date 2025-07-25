@@ -23,8 +23,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <poll.h>
+#include <time.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/Xinerama.h>
 #include "progman.h"
 #include "atom.h"
 
@@ -47,11 +49,12 @@ static void handle_shape_change(XShapeEvent *);
 
 static XEvent ev;
 
+unsigned xinerama_screen_idx;
 void
 event_loop(void)
 {
 	struct pollfd pfd[2];
-        struct Dimensions dims = get_dimensions(dpy,screen);
+        geom_t* old_xinerama_screens = malloc(num_xinerama_screens*sizeof(geom_t));
 	memset(&pfd, 0, sizeof(pfd));
 	pfd[0].fd = ConnectionNumber(dpy);
 	pfd[0].events = POLLIN;
@@ -59,25 +62,108 @@ event_loop(void)
 	pfd[1].events = POLLIN;
         
 	for (;;) {
+                struct Dimensions old_dim, new_dim;
+                if(XineramaIsActive(dpy) && num_xinerama_screens && !cycle_key)
+                {
+                        int root_x, root_y;
+                        get_pointer(&root_x,&root_y);
+                        geom_t cursor = { root_x, root_y, 1, 1 };
+                        for(unsigned i=0; i<num_xinerama_screens; i++)
+                                if(overlapping_geom(xinerama_screens[i],cursor))
+                                {
+                                        xinerama_screen_idx = i;
+                                        break;
+                                }
+                        cur_desk = shown_desks[xinerama_screen_idx];
+                        old_xinerama_screens = reallocarray(old_xinerama_screens,num_xinerama_screens,sizeof(geom_t));
+                        old_dim = (struct Dimensions){old_xinerama_screens[xinerama_screen_idx].w,old_xinerama_screens[xinerama_screen_idx].h};
+                        new_dim = (struct Dimensions){xinerama_screens[xinerama_screen_idx].w,xinerama_screens[xinerama_screen_idx].h};
+                        memcpy(old_xinerama_screens,xinerama_screens,num_xinerama_screens*sizeof(geom_t));
+                }
+                else
+                {
+                        static struct Dimensions saved_dim;
+                        old_dim = saved_dim;
+                        saved_dim = new_dim = get_dimensions(dpy,screen);
+                }
+                        
 		if (!XPending(dpy)) {
 			int retval = poll(pfd, 2, 1000);
 			if (pfd[1].revents)
 				/* exitmsg */
 				break;
-                        
-                        struct Dimensions temp = get_dimensions(dpy,screen);
-                        if(dims.width!=temp.width || dims.height!=temp.height)
-                        {
-                                dims = temp;
+
+                        if(memcmp(&old_dim,&new_dim,sizeof(struct Dimensions)))
                                 if(focused && focused->state & STATE_ZOOMED)
                                         zoom_client(focused);
                                 else if(focused && focused->state & STATE_FULLSCREEN)
                                         fullscreen_client(focused);
-                        }
 
 			if (!XPending(dpy))
 				continue;
 		}
+
+                //Handle multiple screens
+                if(XineramaIsActive(dpy))
+                {
+                        int num_xinerama;
+                        XineramaScreenInfo* new_xinerama_screens = XineramaQueryScreens(dpy,&num_xinerama);
+                        if(num_xinerama!=num_xinerama_screens)
+                        {
+                                int old_num_screens = num_xinerama_screens;
+                                num_xinerama_screens = num_xinerama;
+                                xinerama_screens = reallocarray(xinerama_screens, num_xinerama_screens, sizeof(geom_t));
+                                shown_desks = reallocarray(shown_desks, num_xinerama_screens, sizeof(int));
+                                if(num_xinerama_screens > ndesks)
+                                {
+                                        puts("Warning: increasing number of desks to match number of screens.");
+                                        ndesks = num_xinerama_screens;
+                                }
+
+                                //Map any new screens to currently unshown desks
+                                for(int i=old_num_screens; i<num_xinerama_screens; i++)
+                                {
+                                        int j;
+                                        for(j=0; j<ndesks; j++)
+                                        {
+                                                bool used = false;
+                                                for(int k=0; k<i; k++)
+                                                        if(shown_desks[k]==j)
+                                                        {
+                                                                used = true;
+                                                                break;
+                                                        }
+                                                if(!used)
+                                                        break;
+                                        }
+                                        shown_desks[i] = j;
+                                }
+                        }
+                        for(int i=0; i<num_xinerama_screens; i++)
+                                xinerama_screens[i] = (geom_t){new_xinerama_screens[i].x_org,new_xinerama_screens[i].y_org,new_xinerama_screens[i].width,new_xinerama_screens[i].height};
+                        XFree(new_xinerama_screens);
+
+                        //For each client which is listed as being on a shown desk, change its assigned desk if its window overlaps more with another shown desk than its current one.
+                        for(client_t* p = focused; p; p = p->next)
+                        {
+                                //Ignore iconified clients
+                                if(p->state & STATE_ICONIFIED)
+                                        continue;
+
+                                //Ignore clients which aren't on a shown desk
+                                bool shown = false;
+                                for(int i=0; i<num_xinerama_screens; i++)
+                                        if(p->desk==shown_desks[i])
+                                        {
+                                                shown = true;
+                                                break;
+                                        }
+                                if(!shown)
+                                        continue;
+
+                                p->desk = get_max_overlap_desk(p);
+                        }
+                }
 
 		XNextEvent(dpy, &ev);
 #ifdef DEBUG
@@ -115,7 +201,22 @@ event_loop(void)
 			handle_property_change(&ev.xproperty);
 			break;
 		case EnterNotify:
-			handle_enter_event(&ev.xcrossing);
+                        if(!focus_follows_mouse)
+                                handle_enter_event(&ev.xcrossing);
+                        else
+                        {
+                                static time_t current;
+                                time_t now = time(NULL);
+                                if(now - current)
+                                {
+                                        current = now;
+                                        client_t* c = find_client(ev.xcrossing.window, MATCH_ANY);
+                                        if(c && c!=focused)
+                                                focus_client(c, FOCUS_NORMAL);
+                                }
+                                else
+                                        handle_enter_event(&ev.xcrossing);
+                        }
 			break;
 		case Expose:
 			handle_expose_event(&ev.xexpose);

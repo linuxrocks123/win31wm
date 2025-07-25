@@ -20,10 +20,12 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <assert.h>
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <time.h>
 #include <X11/Xatom.h>
@@ -451,8 +453,9 @@ place_icon(client_t *c)
 
 	collect_struts(c, &s);
 
-	s.right = get_x(dpy, screen) - s.right;
-	s.bottom = get_y(dpy, screen) - s.bottom;
+        geom_t screen_geometry = get_geometry(dpy);
+	s.right = screen_geometry.x + screen_geometry.w - s.right;
+	s.bottom = screen_geometry.y + screen_geometry.h - s.bottom;
 
 	isize = icon_size * 2.25;
 
@@ -537,8 +540,7 @@ do_shade(client_t *c)
 void
 fullscreen_client(client_t *c)
 {
-	int screen_x = get_x(dpy, screen);
-	int screen_y = get_y(dpy, screen);
+        geom_t screen_geom = get_geometry(dpy);
 
 #ifdef DEBUG
 	dump_name(c, __func__, NULL, c->name);
@@ -548,10 +550,7 @@ fullscreen_client(client_t *c)
 		unshade_client(c);
 
 	c->save = c->geom;
-	c->geom.x = 0;
-	c->geom.y = 0;
-	c->geom.w = screen_x;
-	c->geom.h = screen_y;
+        c->geom = screen_geom;
 	c->state |= STATE_FULLSCREEN;
 	redraw_frame(c, None);
 	send_config(c);
@@ -588,6 +587,7 @@ void
 zoom_client(client_t *c)
 {
 	strut_t s = { 0 };
+        geom_t screen_geom = get_geometry(dpy);
 
 	if (c->state & (STATE_DOCK | STATE_FULLSCREEN))
 		return;
@@ -601,10 +601,10 @@ zoom_client(client_t *c)
 	collect_struts(c, &s);
 	recalc_frame(c);
 
-	c->geom.x = s.left;
-	c->geom.y = s.top + c->titlebar_geom.h;
-	c->geom.w = get_x(dpy, screen) - s.left - s.right;
-	c->geom.h = get_y(dpy, screen) - s.top - s.bottom - c->geom.y;
+	c->geom.x = s.left + screen_geom.x;
+	c->geom.y = s.top + c->titlebar_geom.h + screen_geom.y;
+	c->geom.w = screen_geom.w - s.left - s.right;
+	c->geom.h = screen_geom.h - s.top - s.bottom - c->geom.y;
 
 	append_atoms(c->win, net_wm_state, XA_ATOM, &net_wm_state_mv, 1);
 	append_atoms(c->win, net_wm_state, XA_ATOM, &net_wm_state_mh, 1);
@@ -652,35 +652,124 @@ send_wm_delete(client_t *c)
 		XKillClient(dpy, c->win);
 }
 
+bool xinerama_move_client_if_needed(client_t* c, geom_t old_screen_geom, geom_t new_screen_geom)
+{
+        //Check for "nothing to do" case
+        if(!memcmp(&old_screen_geom,&new_screen_geom,sizeof(geom_t)))
+                return false;
+
+        //This shouldn't happen but avoid DIV error if it does
+        if(!old_screen_geom.w || !old_screen_geom.h)
+                return false;
+
+        //Save old screen position
+        struct Display_Client_Node* screen_geom;
+        for(screen_geom = c->saved_screen_geoms; screen_geom; screen_geom = screen_geom->next)
+                if(screen_geom->geom_of_screen.width == old_screen_geom.w && screen_geom->geom_of_screen.height == old_screen_geom.h)
+                {
+                        screen_geom->geom_on_screen = c->geom;
+                        break;
+                }
+        if(!screen_geom)
+        {
+                screen_geom = malloc(sizeof(struct Display_Client_Node));
+                screen_geom->geom_of_screen.width = old_screen_geom.w;
+                screen_geom->geom_of_screen.height = old_screen_geom.h;
+                screen_geom->geom_on_screen = c->geom;
+                screen_geom->next = c->saved_screen_geoms;
+                c->saved_screen_geoms = screen_geom;
+        }
+
+        //Lookup saved position on new screen
+        for(screen_geom = c->saved_screen_geoms; screen_geom; screen_geom = screen_geom->next)
+                if(screen_geom->geom_of_screen.width == new_screen_geom.w && screen_geom->geom_of_screen.height == new_screen_geom.h)
+                {
+                        c->geom = screen_geom->geom_on_screen;
+                        return true;
+                }
+
+        //Okay, we're still here, so we didn't have anything.  We're going to have to figure this out ourselves.
+        c->geom.x -= old_screen_geom.x;
+        c->geom.y -= old_screen_geom.y;
+
+        //Not a fan of using floating point here but it's not worth breaking out C++ so I can use Number
+        float x_scale_factor = (float)new_screen_geom.w / old_screen_geom.w;
+        float y_scale_factor = (float)new_screen_geom.h / old_screen_geom.h;
+        c->geom.x *= x_scale_factor;
+        c->geom.y *= y_scale_factor;
+        c->geom.w *= x_scale_factor;
+        c->geom.h *= y_scale_factor;
+        c->geom.x += new_screen_geom.x;
+        c->geom.y += new_screen_geom.y;
+
+        if(c->geom.x < c->border_width)
+                c->geom.x = c->border_width;
+        int buts = font->ascent + font->descent + (2 * opt_pad) + 2;
+        if(c->geom.y < c->border_width + ((c->frame_style & FRAME_TITLEBAR) ? buts : 0))
+                c->geom.y = c->border_width + ((c->frame_style & FRAME_TITLEBAR) ? buts : 0);
+
+        //Save new screen position
+        for(screen_geom = c->saved_screen_geoms; screen_geom; screen_geom = screen_geom->next)
+                if(screen_geom->geom_of_screen.width == new_screen_geom.w && screen_geom->geom_of_screen.height == new_screen_geom.h)
+                {
+                        screen_geom->geom_on_screen = c->geom;
+                        break;
+                }
+        if(!screen_geom)
+        {
+                screen_geom = malloc(sizeof(struct Display_Client_Node));
+                screen_geom->geom_of_screen.width = new_screen_geom.w;
+                screen_geom->geom_of_screen.height = new_screen_geom.h;
+                screen_geom->geom_on_screen = c->geom;
+                screen_geom->next = c->saved_screen_geoms;
+                c->saved_screen_geoms = screen_geom;
+        }
+        
+        return true;
+}
+
 void
 goto_desk(int new_desk)
 {
 	client_t *c, *newfocus = NULL;
 
-	if (new_desk >= ndesks || new_desk < 0)
+	if (new_desk >= ndesks || new_desk < 0 || dragging || new_desk==cur_desk)
 		return;
 
-	cur_desk = new_desk;
-	set_atoms(root, net_cur_desk, XA_CARDINAL, &cur_desk, 1);
+        int old_desk = cur_desk;
+	set_atoms(root, net_cur_desk, XA_CARDINAL, &new_desk, 1);
+        
+        int active_xinerama_screen = -1;
+        int swaptarget_xinerama_screen = -1;
+        for(int i=0; i<num_xinerama_screens; i++)
+        {
+                if(shown_desks[i]==old_desk)
+                        active_xinerama_screen = i;
+                if(shown_desks[i]==new_desk)
+                        swaptarget_xinerama_screen = i;
+        }
+        assert(active_xinerama_screen!=-1 && "This shouldn't happen.");
+
+        int swaptarget_desk = swaptarget_xinerama_screen==-1 ? DESK_NONE : shown_desks[active_xinerama_screen];
 
 	for (c = focused; c; c = c->next) {
-		if (dragging == c) {
-			c->desk = cur_desk;
-			set_atoms(c->win, net_wm_desk, XA_CARDINAL, &cur_desk,
-			    1);
-		}
+                if(c->state & STATE_ICONIFIED)
+                        continue;
 
-		if (IS_ON_CUR_DESK(c)) {
-			if (c->state & STATE_ICONIFIED) {
-				XMapWindow(dpy, c->icon);
-				XMapWindow(dpy, c->icon_label);
-			} else {
-				if (!newfocus && !(c->state & STATE_DOCK))
-					newfocus = c;
+                bool send_config_needed;
+                bool moveresize_needed = false;
+		if (c->desk == new_desk) {
+                        if (!newfocus && !(c->state & STATE_DOCK))
+                                newfocus = c;
 
-				XMapWindow(dpy, c->frame);
-			}
-		} else {
+                        XMapWindow(dpy,c->frame);
+                        send_config_needed = true;
+                        moveresize_needed = xinerama_move_client_if_needed(c,xinerama_screens[get_max_overlap_xinerama_screen(c)],xinerama_screens[active_xinerama_screen]);
+		} else if (c->desk == swaptarget_desk) {
+                        send_config_needed = true;
+                        moveresize_needed = xinerama_move_client_if_needed(c,xinerama_screens[get_max_overlap_xinerama_screen(c)],xinerama_screens[swaptarget_xinerama_screen]);
+                } else if (c->desk == old_desk) {
+                        send_config_needed = true;
 			if (c->state & STATE_ICONIFIED) {
 				XUnmapWindow(dpy, c->icon);
 				XUnmapWindow(dpy, c->icon_label);
@@ -688,8 +777,18 @@ goto_desk(int new_desk)
 				XUnmapWindow(dpy, c->frame);
 		}
 
-		send_config(c);
+                if(moveresize_needed)
+                        redraw_frame(c,None);
+                if(send_config_needed)
+                        send_config(c);
+                if(moveresize_needed)
+                        flush_expose_client(c);
 	}
+
+	cur_desk = new_desk;
+        shown_desks[active_xinerama_screen] = new_desk;
+        if(swaptarget_xinerama_screen!=-1)
+                shown_desks[swaptarget_xinerama_screen] = old_desk;
 
 	restack_clients();
 
@@ -986,16 +1085,31 @@ constrain_frame(client_t *c)
 		c->geom.y += delta;
 	}
 
-	h = get_y(dpy, screen) - s.top - s.bottom;
-	if (c->frame_geom.y + c->frame_geom.h > h) {
-		delta = c->frame_geom.y + c->frame_geom.h - h;
+        unsigned old_xinerama_idx = xinerama_screen_idx;
+        for(xinerama_screen_idx=0; xinerama_screen_idx<num_xinerama_screens; xinerama_screen_idx++)
+                if(c->desk==shown_desks[xinerama_screen_idx])
+                        break;
+        if(xinerama_screen_idx==num_xinerama_screens)
+                xinerama_screen_idx=old_xinerama_idx;
+
+        geom_t screen_geom = get_geometry(dpy);
+        xinerama_screen_idx = old_xinerama_idx;        
+	h = screen_geom.h - s.top - s.bottom;
+	if (c->frame_geom.y + c->frame_geom.h > screen_geom.y + h) {
+		delta = c->frame_geom.y + c->frame_geom.h - h - screen_geom.y;
+                int min_h = MIN(c->frame_geom.h,c->geom.h);
+                if(delta > min_h - 10)
+                  delta = min_h - 10;
 		c->frame_geom.h -= delta;
 		c->geom.h -= delta;
 	}
 
-	w = get_x(dpy, screen) - s.left - s.right;
-	if (c->frame_geom.x + c->frame_geom.w > w) {
-		delta = c->frame_geom.x + c->frame_geom.w - w;
+	w = screen_geom.w - s.left - s.right;
+	if (c->frame_geom.x + c->frame_geom.w > screen_geom.x + w) {
+		delta = c->frame_geom.x + c->frame_geom.w - w - screen_geom.x;
+                int min_w = MIN(c->frame_geom.w,c->geom.w);
+                if(delta > min_w - 10)
+                  delta = min_w - 10;
 		c->frame_geom.w -= delta;
 		c->geom.w -= delta;
 	}
@@ -1059,6 +1173,19 @@ overlapping_geom(geom_t a, geom_t b)
 		return 1;
 
 	return 0;
+}
+
+int overlapping_area(geom_t a, geom_t b)
+{
+        int uleft_x = MAX(a.x, b.x);
+        int uleft_y = MAX(a.y, b.y);
+        int dright_x = MIN(a.x + a.w, b.x + b.w);
+        int dright_y = MIN(a.y + a.h, b.y + b.h);
+        int overlap_width = dright_x - uleft_x;
+        int overlap_height = dright_y - uleft_y;
+        if(overlap_width < 0 || overlap_height < 0)
+                return 0;
+        return overlap_width * overlap_height;
 }
 
 void

@@ -224,8 +224,30 @@ take_action(action_t *action)
 	case ACTION_MOVE:
                 if(focused)
                 {
-                        focused->desk = action->iarg;
-                        goto_desk(cur_desk);
+                        int old_desk = focused->desk;
+                        int new_desk = action->iarg;
+                        if(old_desk==new_desk)
+                                break;
+                        focused->desk = new_desk;
+                        if(new_desk==DESK_ALL)
+                                break;
+                        int screen_idx;
+                        for(screen_idx=0; screen_idx < num_xinerama_screens; screen_idx++)
+                                if(shown_desks[screen_idx]==new_desk)
+                                        break;
+                        if(screen_idx==num_xinerama_screens)
+                        {
+                                XUnmapWindow(dpy,focused->frame);
+                                break;
+                        }
+
+                        if(xinerama_move_client_if_needed(focused,xinerama_screens[xinerama_screen_idx],xinerama_screens[screen_idx]))
+                        {
+                                cur_desk = new_desk;
+                                redraw_frame(focused,None);
+                                send_config(focused);
+                                flush_expose_client(focused);
+                        }
                 }
 		break;
 	case ACTION_CLOSE:
@@ -250,41 +272,54 @@ take_action(action_t *action)
 	}
 }
 
-struct Dimensions get_dimensions(Display* dpy, int screen)
+geom_t get_geometry(Display* dpy)
 {
-        int m_winWidth = 0;
-        int m_winHeight = 0;
+        geom_t to_return;
         if (XineramaIsActive (dpy))
         {
                 int m = 0;
                 int pixels = 0;
                 
                 XineramaScreenInfo *xs = XineramaQueryScreens (dpy, &m);
-                
-                if (0 != xs && m > 0)
+
+                if(xs && xinerama_screen_idx < m)
                 {
+                        to_return.x = xs[xinerama_screen_idx].x_org;
+                        to_return.y = xs[xinerama_screen_idx].y_org;
+                        to_return.w = xs[xinerama_screen_idx].width;
+                        to_return.h = xs[xinerama_screen_idx].height;
+                }
+                else if (0 != xs && m > 0)
                         for (int i = 0; i < m; i++)
                         {
                                 //printf ("%dx%d, [%d, %d] %d\n", xs[i].width, xs[i].height, xs[i].x_org, xs[i].y_org, xs[i].screen_number);
                                 if (xs[i].width * xs[i].height > pixels)
                                 {
                                         pixels = xs[i].width * xs[i].height;
-                                        m_winWidth = xs[i].width;
-                                        m_winHeight = xs[i].height;
+                                        to_return.x = xs[i].x_org;
+                                        to_return.y = xs[i].y_org;
+                                        to_return.w = xs[i].width;
+                                        to_return.h = xs[i].height;
                                 }
                         }
-                        
+                
+                if(xs)
                         XFree (xs);
-                }
         }
         else
         {
-                m_winWidth = DisplayWidth(dpy,screen);
-                m_winHeight = DisplayHeight(dpy,screen);
+                to_return.x = to_return.y = 0;
+                to_return.w = DisplayWidth(dpy,screen);
+                to_return.h = DisplayHeight(dpy,screen);
         }
 
-        struct Dimensions to_return = {m_winWidth,m_winHeight};
         return to_return;
+}
+
+struct Dimensions get_dimensions(Display* dpy, int screen)
+{
+        geom_t dpy_geom = get_geometry(dpy);
+        return (struct Dimensions){dpy_geom.w,dpy_geom.h};
 }
 
 int get_x(Display* dpy, int screen)
@@ -295,4 +330,25 @@ int get_x(Display* dpy, int screen)
 int get_y(Display* dpy, int screen)
 {
         return get_dimensions(dpy,screen).height;
+}
+
+int get_max_overlap_desk(client_t* c)
+{
+        return shown_desks[get_max_overlap_xinerama_screen(c)];
+}
+
+int get_max_overlap_xinerama_screen(client_t* c)
+{
+        int max_overlap = 0;
+        int max_overlap_screen = 0;
+        for(int i=0; i<num_xinerama_screens; i++)
+        {
+                int current_overlap = overlapping_area(c->geom,xinerama_screens[i]);
+                if(current_overlap > max_overlap)
+                {
+                        max_overlap = current_overlap;
+                        max_overlap_screen = i;
+                }
+        }
+        return max_overlap_screen;
 }

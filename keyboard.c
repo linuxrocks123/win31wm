@@ -31,9 +31,9 @@
 
 action_t *key_actions = NULL;
 int nkey_actions = 0;
-static int cycle_key = 0;
+int cycle_key = 0;
 
-const static int IGNORED_MODIFIERS = XCB_MOD_MASK_LOCK | XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_2;
+const static int IGNORED_MODIFIERS = XCB_MOD_MASK_LOCK | XCB_MOD_MASK_2;
 
 action_t *
 bind_key(int type, char *key, char *action)

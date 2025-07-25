@@ -68,8 +68,8 @@ client_t *cycle_head;
 client_t *focused, *dragging;
 int screen;
 int ignore_xerrors = 0;
-unsigned long ndesks = DEF_NDESKS;
-unsigned long cur_desk = 0;
+unsigned int ndesks = DEF_NDESKS;
+unsigned int cur_desk = 0;
 unsigned int focus_order = 0;
 Bool shape_support;
 int shape_event;
@@ -127,6 +127,11 @@ Cursor resize_se_curs;
 
 int exitmsg[2];
 
+unsigned int num_xinerama_screens;
+geom_t* xinerama_screens;
+int* shown_desks; //size: num_xinerama_screens
+
+
 char *opt_config_file = NULL;
 char *opt_font = DEF_FONT;
 char *opt_iconfont = DEF_ICONFONT;
@@ -150,6 +155,7 @@ int opt_scale = DEF_SCALE;
 int icon_size = ICON_SIZE_MULT * DEF_SCALE;
 int opt_drag_button = 0;
 int opt_drag_mod = 0;
+bool focus_follows_mouse;
 
 void read_config(void);
 void setup_display(void);
@@ -245,6 +251,8 @@ read_config(void)
 				opt_launcher_bg = strdup(val);
 			else if (strcmp(key, "root_bgcolor") == 0)
 				opt_root_bg = strdup(val);
+                        else if (strcmp(key, "focus_follows_mouse") == 0)
+                                focus_follows_mouse = atoi(val);
 			else if (strcmp(key, "border_width") == 0) {
 				opt_bw = atoi(val);
 				if (opt_bw < 0) {

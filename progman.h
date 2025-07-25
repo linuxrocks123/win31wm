@@ -22,6 +22,7 @@
 #ifndef PROGMAN_H
 #define PROGMAN_H
 
+#include <stdbool.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xft/Xft.h>
@@ -78,6 +79,7 @@
     (t) == net_wm_type_desk || (t) == net_wm_type_notif)
 #define HAS_DECOR(t) (!CAN_PLACE_SELF(t))
 #define DESK_ALL 0xFFFFFFFF
+#define DESK_NONE -2
 #define IS_ON_DESK(w, d) (w == d || w == DESK_ALL)
 #define IS_ON_CUR_DESK(c) \
 	(IS_ON_DESK((c)->desk, cur_desk) || (c)->state & STATE_ICONIFIED)
@@ -172,6 +174,18 @@ enum {
 	    FRAME_CLOSE | FRAME_ICONIFY | FRAME_ZOOM,
 };
 
+struct Dimensions
+{
+        int width;
+        int height;
+};
+
+struct Display_Client_Node {
+        struct Dimensions geom_of_screen;
+        geom_t geom_on_screen;
+        struct Display_Client_Node* next;
+};
+
 typedef struct client client_t;
 struct client {
 	client_t *next;
@@ -179,6 +193,7 @@ struct client {
 	XftDraw *xftdraw;
 	Window win, trans;
 	geom_t geom, save;
+        struct Display_Client_Node* saved_screen_geoms;
 	Window frame;
 	geom_t frame_geom;
 	unsigned int frame_style;
@@ -272,10 +287,11 @@ extern char *orig_argv0;
 extern Display *dpy;
 extern Window root;
 extern client_t *focused, *dragging;
+extern int cycle_key;
 extern int screen;
 extern int ignore_xerrors;
-extern unsigned long cur_desk;
-extern unsigned long ndesks;
+extern unsigned int cur_desk;
+extern unsigned int ndesks;
 extern Bool shape_support;
 extern int shape_event;
 extern Window supporting_wm_win;
@@ -348,8 +364,14 @@ extern int opt_edge_resist;
 extern int opt_scale;
 extern int opt_drag_button;
 extern int opt_drag_mod;
+extern bool focus_follows_mouse;
 extern void sig_handler(int signum);
 extern int exitmsg[2];
+
+extern unsigned xinerama_screen_idx;
+extern unsigned int num_xinerama_screens;
+extern geom_t* xinerama_screens;
+extern int* shown_desks; //size: num_xinerama_screens
 
 /* progman.c */
 void cleanup(void);
@@ -402,6 +424,7 @@ extern void zoom_client(client_t *);
 extern void unzoom_client(client_t *);
 extern void send_wm_delete(client_t *);
 extern void goto_desk(int);
+bool xinerama_move_client_if_needed(client_t* c, geom_t old_screen_geom, geom_t new_screen_geom);
 extern void map_if_desk(client_t *);
 extern void sweep(client_t *, Cursor, sweep_func, void *, strut_t *);
 extern void recalc_map(client_t *, geom_t, int, int, int, int, strut_t *,
@@ -416,6 +439,7 @@ extern char *state_name(client_t *);
 extern void flush_expose_client(client_t *);
 extern void flush_expose(Window);
 extern int overlapping_geom(geom_t, geom_t);
+extern int overlapping_area(geom_t, geom_t);
 extern void restack_clients(void);
 extern void adjust_client_order(client_t *, int);
 extern client_t *next_client_for_focus(client_t *);
@@ -446,14 +470,12 @@ extern int send_xmessage(Window, Window, Atom, unsigned long, unsigned long);
 extern action_t *bind_key(int, char *, char *);
 extern void take_action(action_t *);
 extern action_t *parse_action(char *, char *);
-struct Dimensions
-{
-        int width;
-        int height;
-};
 
 extern struct Dimensions get_dimensions(Display* dpy, int screen);
+extern geom_t get_geometry(Display* dpy);
 extern int get_x(Display* dpy, int screen);
 extern int get_y(Display* dpy, int screen);
+extern int get_max_overlap_desk(client_t* c);
+extern int get_max_overlap_xinerama_screen(client_t* c);
 
 #endif	/* PROGMAN_H */

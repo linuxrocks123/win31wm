@@ -335,10 +335,9 @@ init_geom(client_t *c, strut_t *s)
 	geom_t size_flags = { 0 };
 #endif
 	unsigned long win_type, read, left;
-	int screen_x = get_x(dpy, screen);
-	int screen_y = get_y(dpy, screen);
-	int wmax = screen_x - s->left - s->right;
-	int hmax = screen_y - s->top - s->bottom;
+        geom_t screen_geom = get_geometry(dpy);
+	int wmax = screen_geom.w - s->left - s->right;
+	int hmax = screen_geom.h - s->top - s->bottom;
 	int mouse_x, mouse_y;
 	int i;
 
@@ -440,10 +439,10 @@ init_geom(client_t *c, strut_t *s)
 	 * except for transients, because they might be a panel-type client
 	 * popping up a notification window over themselves.
 	 */
-	if (c->geom.x + c->geom.w > screen_x - s->right)
-		c->geom.x = screen_x - s->right - c->geom.w;
-	if (c->geom.y + c->geom.h > screen_y - s->bottom)
-		c->geom.y = screen_y - s->bottom - c->geom.h;
+	if (c->geom.x + c->geom.w > screen_geom.w - s->right + screen_geom.x)
+		c->geom.x = screen_geom.w - s->right - c->geom.w + screen_geom.x;
+	if (c->geom.y + c->geom.h > screen_geom.h - s->bottom + screen_geom.y)
+		c->geom.y = screen_geom.h - s->bottom - c->geom.h + screen_geom.y;
 	if (c->geom.x < s->left || c->geom.w > wmax)
 		c->geom.x = s->left;
 	if (c->geom.y < s->top || c->geom.h > hmax)
